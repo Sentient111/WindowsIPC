@@ -10,23 +10,9 @@ HANDLE mutexHandle = INVALID_HANDLE_VALUE;
 SharedSection* mappedViewOfFile = nullptr;
 
 
-void AquirePageLockRoutine()
-{
-	if (WaitForSingleObject(mutexHandle, MUTEX_WAIT_TIMEOUT))
-	{
-		printf("Failed to aquire mutex %X\n", GetLastError());
-		return;
-	}
-}
-
-void ReleasePageLockRoutine()
-{
-	ReleaseMutex(mutexHandle);
-}
-
-
 void UpdateListsRoutine()
 {
+	printf("Update called\n");
 	if (0 > mappedViewOfFile->newPacketsCount)
 	{
 		printf("No new packets\n");
@@ -40,23 +26,25 @@ void UpdateListsRoutine()
 	{
 		switch (currPacket->type)
 		{
-		case PACKET_TYPE_PID:
-		{
-			printf("Recieved new pid to blacklist %X\n", *(int*)&currPacket->data);
-			hiddenPidList.push_back(*(int*)&currPacket->data);
-			break;
-		}
+			case PACKET_TYPE_PID:
+			{
+				printf("Recieved new pid to blacklist %X\n", *(int*)&currPacket->data);
+				hiddenPidList.push_back(*(int*)&currPacket->data);
+				break;
+			}
 
-		default:
-		{
-			printf("Invalid packet type at idx %i\n", i);
-			break;
-		}
+			default:
+			{
+				printf("Invalid packet type at idx %i\n", i);
+				break;
+			}
 		}
 
 		readPacketSize += currPacket->size;
 		currPacket = (SharedPacket*)(((BYTE*)currPacket) + currPacket->size);
 	}
+
+	mappedViewOfFile->freePacketSize -= readPacketSize;
 }
 
 bool InitHostIPC()
@@ -69,7 +57,7 @@ bool InitHostIPC()
 		return false;
 	}
 
-	mutexHandle = CreateMutexA(NULL, NULL, "Fuckyou");
+	mutexHandle = CreateMutexA(NULL, NULL, "BoberBoBBIBO");
 	if (IS_INVALID_HANDLE(mutexHandle))
 	{
 		printf("Failed to create mutex %X\n", GetLastError());
@@ -94,14 +82,12 @@ bool InitHostIPC()
 	}
 
 	//set handlers
-	mappedViewOfFile->lockHandler = (UINT64)AquirePageLockRoutine;
-	mappedViewOfFile->unlockHandler = (UINT64)ReleasePageLockRoutine;
 	mappedViewOfFile->updateHandler = (UINT64)UpdateListsRoutine;
 	mappedViewOfFile->ownerPid = GetCurrentProcessId();
 	mappedViewOfFile->newPacketsCount = 0;
-
+	mappedViewOfFile->freePacketSize = sysInfo.dwPageSize - offsetof(SharedSection, packets);
 	return true;
-}
+};
 
 
 void DestroyHostIPC()

@@ -3,6 +3,7 @@
 
 SharedSection* sharedSec = nullptr;
 HANDLE clientFilemappingHandle = INVALID_HANDLE_VALUE;
+HANDLE sharedPageMutex = INVALID_HANDLE_VALUE;
 
 bool RemoteCall(UINT64 routine)
 {
@@ -21,13 +22,7 @@ bool RemoteCall(UINT64 routine)
 		return false;
 	}
 
-	if (WaitForSingleObject(callThread, MUTEX_WAIT_TIMEOUT / 2))
-	{
-		printf("Failed to execute routine %X\n", GetLastError());
-		CloseHandle(procHandle);
-		TerminateThread(callThread, 0);
-		return false;
-	}
+	WaitForSingleObject(callThread, 1000);
 
 	CloseHandle(procHandle);
 	CloseHandle(callThread);
@@ -37,9 +32,9 @@ bool RemoteCall(UINT64 routine)
 
 bool AddPacketsToRemoteList(PVOID packets, ULONG packetCount, ULONG size)
 {
-	if (!RemoteCall(sharedSec->lockHandler))
+	if (WaitForSingleObject(sharedPageMutex, MUTEX_WAIT_TIMEOUT))
 	{
-		printf("Failed to aquire lock for page\n");
+		printf("Failed to obtain shared page mutex %X\n", GetLastError());
 		return false;
 	}
 
@@ -50,11 +45,7 @@ bool AddPacketsToRemoteList(PVOID packets, ULONG packetCount, ULONG size)
 	sharedSec->newPacketsCount = 0;
 	memset(&sharedSec->packets, 0, size);
 
-	if (!RemoteCall(sharedSec->unlockHandler))
-	{
-		printf("Failed to release lock for page\n");
-		return false;
-	}
+	ReleaseMutex(sharedPageMutex);
 }
 
 bool OpenClientIpc()
@@ -66,7 +57,6 @@ bool OpenClientIpc()
 		printf("Invalid system page size %X\n", sysInfo.dwPageSize);
 		return false;
 	}
-
 
 	clientFilemappingHandle = OpenFileMappingA(FILE_MAP_ALL_ACCESS, false, "BigManBill");
 	if (IS_INVALID_HANDLE(clientFilemappingHandle))
@@ -82,9 +72,12 @@ bool OpenClientIpc()
 		return false;
 	}
 
-	//write to shared mem
-	MEMORY_BASIC_INFORMATION memInfo = { 0 };
-	VirtualQuery(sharedSec, &memInfo, sizeof(MEMORY_BASIC_INFORMATION));
+	sharedPageMutex = OpenMutexA(SYNCHRONIZE, false, "BoberBoBBIBO");
+	if (!sharedPageMutex)
+	{
+		printf("Failed to open mutex %X\n", GetLastError());
+		return false;
+	}
 
 	return true;
 }

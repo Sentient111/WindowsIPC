@@ -18,10 +18,8 @@ struct SharedPacket
 struct SharedSection
 {
 	UINT64 updateHandler;
-	UINT64 lockHandler;
-	UINT64 unlockHandler;
-
 	int ownerPid;
 	DWORD newPacketsCount;
+	DWORD freePacketSize;
 	SharedPacket* packets;
 };
